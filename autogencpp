@@ -1,0 +1,119 @@
+#!/usr/bin/env python3.8
+# PYTHON_ARGCOMPLETE_OK
+import os.path
+import sys
+import uuid
+import re
+import argparse
+import argcomplete
+
+def create_files():
+    args = get_args()
+    if not (args.no_header or args.sandbox):
+        write_header(args)
+    if not args.no_source:
+        write_source(args)
+
+verbose_print = None
+def get_args():
+    args = parse().parse_args()
+    _verbose_print = print if args.verbose else lambda *a, **k: None
+    global verbose_print
+    verbose_print = _verbose_print
+    return args
+
+def parse():
+    parser = argparse.ArgumentParser(prog='autogencpp', 
+            description='Generate .cpp and .h files', 
+            usage='autogencpp [--header header1 ...] [--source header1 ...] filename')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+            help='verbose mode: print debugging output')
+    parser.add_argument('--force', '-f', action='store_true', 
+            help='overwrite FILENAME')
+    parser.add_argument('--no-header', action='store_true', 
+            help='do not create a header (.h) file')
+    parser.add_argument('--no-source', action='store_true', 
+            help='do not create a source (.cpp) file')
+    parser.add_argument('--header', '-H', action='extend', nargs='*', 
+            help='libraries to #include in header file', dest='header_args')
+    parser.add_argument('--source', '-c', action='extend', nargs='*', 
+            help='libraries to #include in the source file', dest='source_args')
+    parser.add_argument('--sandbox', '-s', action='store_true', 
+            help='create a source file only with a main() function')
+    parser.add_argument('--bits', '-b', action='store_true',
+            help='"#include <bits/stdc++>" header')
+    parser.add_argument('--main-function', '-m', action='store_true', 
+            help='include a main() function in the .cpp file')
+    parser.add_argument('filename', nargs='?', default='main', 
+            help='name of the file(s) to be generated')
+    argcomplete.autocomplete(parser)
+    return parser
+
+
+def write_header(args):
+    verbose_print('Writing header...')
+    file_name = strip_extensions(args.filename)
+    file_name_ext = '%s.h' % file_name
+
+    verbose_print('\tHeader file name: %s' % file_name_ext)
+    if args.force:
+        f = open(file_name_ext, "w")
+    else:
+        try:
+            f = open(file_name_ext, "x")
+        except FileExistsError:
+            print('%s already exists. To overwrite file, use [-f | --force]' % file_name_ext)
+            return
+
+    f.write('#ifndef %s_H\n' % file_name.upper())
+    f.write('#define %s_H\n' % file_name.upper())
+
+    if args.header_args:
+        header_includes = format_includes(args.header_args)
+        f.write('%s\n' % header_includes)
+    f.write('#endif')
+    f.close()
+
+
+def write_source(args):
+    verbose_print('Writing source file...')
+    file_name = strip_extensions(args.filename)
+    if file_name == 'main' and os.path.exists('main.cpp'):
+        file_name += str(uuid.uuid4())
+
+    file_name_ext = '%s.cpp' % file_name
+
+    verbose_print('\tSource file name: %s' % file_name_ext)
+    if args.force:
+        f = open(file_name_ext, "w")
+    else:
+        try:
+            f = open(file_name_ext, "x")
+        except FileExistsError:
+            print('%s already exists. To overwrite file, use [-f | --force]' % file_name_ext)
+            return
+
+    if not (args.no_header or args.sandbox):
+        f.write('#include "%s.h"\n' % file_name)
+    if args.sandbox or args.bits:
+        f.write('#include <bits/stdc++.h>\n')
+    if args.source_args:
+        source_includes = format_includes(args.source_args)
+        f.write('%s\n' % source_includes)
+    if args.main_function or args.sandbox:
+        f.write('int main() {\n}')
+    
+    f.close()
+
+def strip_extensions(file_name):
+    return file_name.rstrip('.cpp').rstrip('.h')
+
+def format_includes(includes):
+  return '\n'.join(("#include {lib}".format(lib = ('"%s"' % include) if include[-2: ] == '.h' else('<%s>' % include))) for include in includes)
+
+
+def main():
+    create_files()
+
+if __name__ == '__main__':
+    main()
